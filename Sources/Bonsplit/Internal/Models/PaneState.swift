@@ -7,18 +7,31 @@ final class PaneState: Identifiable {
     let id: PaneID
     var tabs: [TabItem]
     var selectedTabId: UUID?
-    var isFullWidthTabMode: Bool = false
+
+    private var projectedIsFocused = false
+
+    /// Whether this live pane is the controller's focused pane.
+    @MainActor
+    var isFocused: Bool {
+        projectedIsFocused
+    }
+
+    @MainActor
+    func synchronizeFocusProjection(from source: SplitViewController) {
+        let isFocused = source.focusedPaneId == id && source.rootNode.findPane(id) === self
+        if projectedIsFocused != isFocused {
+            projectedIsFocused = isFocused
+        }
+    }
 
     init(
         id: PaneID = PaneID(),
         tabs: [TabItem] = [],
-        selectedTabId: UUID? = nil,
-        isFullWidthTabMode: Bool = false
+        selectedTabId: UUID? = nil
     ) {
         self.id = id
         self.tabs = tabs
         self.selectedTabId = selectedTabId ?? tabs.first?.id
-        self.isFullWidthTabMode = isFullWidthTabMode
     }
 
     /// Currently selected tab

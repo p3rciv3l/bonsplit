@@ -62,9 +62,6 @@ public struct BonsplitConfiguration: Sendable {
     /// Whether to allow moving tabs between panes
     public var allowCrossPaneTabMove: Bool
 
-    /// Whether tabs install and present their standard context menu.
-    public var allowsTabContextMenu: Bool
-
     /// Whether to automatically close empty panes
     public var autoCloseEmptyPanes: Bool
 
@@ -76,13 +73,6 @@ public struct BonsplitConfiguration: Sendable {
 
     /// Controls when pane tab bars are shown
     public var tabBarVisibility: TabBarVisibility
-
-    /// Normalized range allowed for split divider positions.
-    public var dividerPositionRange: ClosedRange<CGFloat> {
-        didSet {
-            dividerPositionRange = Self.normalizedDividerPositionRange(dividerPositionRange)
-        }
-    }
 
     // MARK: - Appearance
 
@@ -113,12 +103,10 @@ public struct BonsplitConfiguration: Sendable {
         allowCloseLastPane: Bool = false,
         allowTabReordering: Bool = true,
         allowCrossPaneTabMove: Bool = true,
-        allowsTabContextMenu: Bool = true,
         autoCloseEmptyPanes: Bool = true,
         contentViewLifecycle: ContentViewLifecycle = .recreateOnSwitch,
         newTabPosition: NewTabPosition = .current,
         tabBarVisibility: TabBarVisibility = .always,
-        dividerPositionRange: ClosedRange<CGFloat> = 0.1...0.9,
         appearance: Appearance = .default
     ) {
         self.allowSplits = allowSplits
@@ -126,21 +114,11 @@ public struct BonsplitConfiguration: Sendable {
         self.allowCloseLastPane = allowCloseLastPane
         self.allowTabReordering = allowTabReordering
         self.allowCrossPaneTabMove = allowCrossPaneTabMove
-        self.allowsTabContextMenu = allowsTabContextMenu
         self.autoCloseEmptyPanes = autoCloseEmptyPanes
         self.contentViewLifecycle = contentViewLifecycle
         self.newTabPosition = newTabPosition
         self.tabBarVisibility = tabBarVisibility
-        self.dividerPositionRange = Self.normalizedDividerPositionRange(dividerPositionRange)
         self.appearance = appearance
-    }
-
-    private static func normalizedDividerPositionRange(
-        _ range: ClosedRange<CGFloat>
-    ) -> ClosedRange<CGFloat> {
-        let lower = min(max(range.lowerBound, 0), 1)
-        let upper = min(max(range.upperBound, lower), 1)
-        return lower...upper
     }
 }
 
@@ -294,15 +272,6 @@ extension BonsplitConfiguration {
         public var icon: Icon
         public var tooltip: String?
         public var action: Action
-        public var activatesOnMouseDown: Bool
-
-        private enum CodingKeys: String, CodingKey {
-            case id
-            case icon
-            case tooltip
-            case action
-            case activatesOnMouseDown
-        }
 
         public var systemImage: String {
             if case .systemImage(let name) = icon {
@@ -315,15 +284,13 @@ extension BonsplitConfiguration {
             id: String,
             systemImage: String,
             tooltip: String? = nil,
-            action: Action,
-            activatesOnMouseDown: Bool = false
+            action: Action
         ) {
             self.init(
                 id: id,
                 icon: .systemImage(systemImage),
                 tooltip: tooltip,
-                action: action,
-                activatesOnMouseDown: activatesOnMouseDown
+                action: action
             )
         }
 
@@ -331,34 +298,12 @@ extension BonsplitConfiguration {
             id: String,
             icon: Icon,
             tooltip: String? = nil,
-            action: Action,
-            activatesOnMouseDown: Bool = false
+            action: Action
         ) {
             self.id = id
             self.icon = icon
             self.tooltip = tooltip
             self.action = action
-            self.activatesOnMouseDown = activatesOnMouseDown
-        }
-
-        public init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            id = try container.decode(String.self, forKey: .id)
-            icon = try container.decode(Icon.self, forKey: .icon)
-            tooltip = try container.decodeIfPresent(String.self, forKey: .tooltip)
-            action = try container.decode(Action.self, forKey: .action)
-            activatesOnMouseDown = try container.decodeIfPresent(Bool.self, forKey: .activatesOnMouseDown) ?? false
-        }
-
-        public func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(id, forKey: .id)
-            try container.encode(icon, forKey: .icon)
-            try container.encodeIfPresent(tooltip, forKey: .tooltip)
-            try container.encode(action, forKey: .action)
-            if activatesOnMouseDown {
-                try container.encode(activatesOnMouseDown, forKey: .activatesOnMouseDown)
-            }
         }
 
         public static let newTerminal = SplitActionButton(
@@ -504,23 +449,6 @@ extension BonsplitConfiguration {
             }
         }
 
-        /// Controls how surface tabs are sized within a pane's tab bar.
-        public enum TabWidthMode: Sendable, Equatable, Codable {
-            /// Tabs use a fixed width clamped to `tabMinWidth...tabMaxWidth` and the
-            /// tab strip scrolls horizontally once the tabs overflow the pane. This is
-            /// the default and preserves Bonsplit's historical layout exactly.
-            case fixed
-
-            /// Tabs stretch to fill the pane's available tab-bar width, distributing the
-            /// space equally between them.
-            ///
-            /// A single tab spans the full available width; multiple tabs share it
-            /// evenly. When the tabs would overflow the pane at their natural width,
-            /// the strip falls back to ``fixed`` sizing and scrolls, so this mode never
-            /// shrinks tabs below their natural width.
-            case fill
-        }
-
         // MARK: - Tab Bar
 
         /// Height of the tab bar
@@ -540,10 +468,6 @@ extension BonsplitConfiguration {
         /// Spacing between tabs
         public var tabSpacing: CGFloat
 
-        /// Controls whether tabs use a fixed width and scroll, or stretch to fill the
-        /// pane's available tab-bar width. Defaults to ``TabWidthMode/fixed``.
-        public var tabWidthMode: TabWidthMode
-
         // MARK: - Split View
 
         /// Minimum width of a pane
@@ -558,14 +482,6 @@ extension BonsplitConfiguration {
         /// raise this to make the separator between adjacent panes easier to see.
         /// Values are clamped to a sane range when applied to the split view.
         public var dividerThickness: CGFloat
-
-        /// Extra points on each side of the drawn divider that still count as
-        /// the divider for drag hit-testing (the effective divider rect).
-        ///
-        /// Defaults to `5`, matching the historical hardcoded expansion. Hosts
-        /// that show a resize cursor over a wider band must raise this to the
-        /// same value so every point that shows the cursor can start a drag.
-        public var dividerHitExpansion: CGFloat
 
         /// Whether to show split buttons in the tab bar
         public var showSplitButtons: Bool
@@ -641,11 +557,9 @@ extension BonsplitConfiguration {
             tabMaxWidth: CGFloat = 220,
             tabTitleFontSize: CGFloat = 11,
             tabSpacing: CGFloat = 0,
-            tabWidthMode: TabWidthMode = .fixed,
             minimumPaneWidth: CGFloat = 100,
             minimumPaneHeight: CGFloat = 100,
             dividerThickness: CGFloat = 1,
-            dividerHitExpansion: CGFloat = 5,
             showSplitButtons: Bool = true,
             splitButtons: [SplitActionButton] = SplitActionButton.defaults,
             splitButtonsOnHover: Bool = false,
@@ -663,11 +577,9 @@ extension BonsplitConfiguration {
             self.tabMaxWidth = tabMaxWidth
             self.tabTitleFontSize = tabTitleFontSize
             self.tabSpacing = tabSpacing
-            self.tabWidthMode = tabWidthMode
             self.minimumPaneWidth = minimumPaneWidth
             self.minimumPaneHeight = minimumPaneHeight
             self.dividerThickness = dividerThickness
-            self.dividerHitExpansion = dividerHitExpansion
             self.showSplitButtons = showSplitButtons
             self.splitButtons = Self.uniqueSplitButtons(splitButtons)
             self.splitButtonsOnHover = splitButtonsOnHover

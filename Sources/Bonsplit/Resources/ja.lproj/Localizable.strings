@@ -17,21 +17,11 @@
 "tabContext.audioMutedAccessibility" = "ミュート中";
 "tabContext.exitZoom" = "ズームを終了";
 "tabContext.zoomPane" = "ペインをズーム";
-"tabContext.enterFullWidthTab" = "タブを全幅表示";
-"tabContext.exitFullWidthTab" = "全幅表示を解除";
-"tabContext.switchTab" = "タブを切り替え";
-"tabContext.paneActions" = "ペイン操作";
 "tabContext.unpinTab" = "タブのピン留めを解除";
 "tabContext.pinTab" = "タブをピン留め";
 "tabContext.markTabAsRead" = "タブを既読にする";
 "tabContext.markTabAsUnread" = "タブを未読にする";
 "tabContext.forkConversation" = "会話をフォーク";
-"tabContext.forkConversation.default.right" = "会話を右にフォーク";
-"tabContext.forkConversation.default.left" = "会話を左にフォーク";
-"tabContext.forkConversation.default.top" = "会話を上にフォーク";
-"tabContext.forkConversation.default.bottom" = "会話を下にフォーク";
-"tabContext.forkConversation.default.newTab" = "会話を新しいタブにフォーク";
-"tabContext.forkConversation.default.newWorkspace" = "会話を新しいワークスペースにフォーク";
 "tabContext.forkConversationTo" = "会話のフォーク先";
 "tabContext.forkConversation.right" = "右分割";
 "tabContext.forkConversation.left" = "左分割";
@@ -39,5 +29,3 @@
 "tabContext.forkConversation.bottom" = "下分割";
 "tabContext.forkConversation.newTab" = "新規タブ";
 "tabContext.forkConversation.newWorkspace" = "新規ワークスペース";
-"tabContext.disconnectRemote" = "SSH接続を解除";
-"tabContext.remoteConnectedAccessibility" = "SSH接続中";

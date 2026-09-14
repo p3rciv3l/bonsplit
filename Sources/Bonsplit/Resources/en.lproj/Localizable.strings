@@ -17,21 +17,11 @@
 "tabContext.audioMutedAccessibility" = "Muted";
 "tabContext.exitZoom" = "Exit Zoom";
 "tabContext.zoomPane" = "Zoom Pane";
-"tabContext.enterFullWidthTab" = "Full Width Tab";
-"tabContext.exitFullWidthTab" = "Exit Full Width Tab";
-"tabContext.switchTab" = "Switch Tab";
-"tabContext.paneActions" = "Pane Actions";
 "tabContext.unpinTab" = "Unpin Tab";
 "tabContext.pinTab" = "Pin Tab";
 "tabContext.markTabAsRead" = "Mark Tab as Read";
 "tabContext.markTabAsUnread" = "Mark Tab as Unread";
 "tabContext.forkConversation" = "Fork Conversation";
-"tabContext.forkConversation.default.right" = "Fork Conversation to the Right";
-"tabContext.forkConversation.default.left" = "Fork Conversation to the Left";
-"tabContext.forkConversation.default.top" = "Fork Conversation to the Top";
-"tabContext.forkConversation.default.bottom" = "Fork Conversation to the Bottom";
-"tabContext.forkConversation.default.newTab" = "Fork Conversation to New Tab";
-"tabContext.forkConversation.default.newWorkspace" = "Fork Conversation to New Workspace";
 "tabContext.forkConversationTo" = "Fork Conversation To";
 "tabContext.forkConversation.right" = "Right Split";
 "tabContext.forkConversation.left" = "Left Split";
@@ -39,5 +29,3 @@
 "tabContext.forkConversation.bottom" = "Bottom Split";
 "tabContext.forkConversation.newTab" = "New Tab";
 "tabContext.forkConversation.newWorkspace" = "New Workspace";
-"tabContext.disconnectRemote" = "Disconnect SSH";
-"tabContext.remoteConnectedAccessibility" = "Connected over SSH";

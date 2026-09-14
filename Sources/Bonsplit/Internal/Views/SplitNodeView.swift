@@ -6,16 +6,18 @@ struct SplitNodeView<Content: View, EmptyContent: View>: View {
     @Environment(SplitViewController.self) private var controller
 
     let node: SplitNode
-    let contentBuilder: (TabItem, PaneID) -> Content
+    let contentBuilder: (TabItem, PaneID, TabContentContext) -> Content
     let emptyPaneBuilder: (PaneID) -> EmptyContent
     let appearance: BonsplitConfiguration.Appearance
-    let dividerPositionRange: ClosedRange<CGFloat>
     var showSplitButtons: Bool = true
     var tabBarVisibility: TabBarVisibility = .always
     var contentViewLifecycle: ContentViewLifecycle = .recreateOnSwitch
     var onGeometryChange: ((_ isDragging: Bool) -> Void)?
     var enableAnimations: Bool = true
     var animationDuration: Double = 0.15
+    var zoomedPaneId: PaneID?
+    let paneHosting: PaneHostingCoordinator
+    let contentRevision: AnyHashable
 
     var body: some View {
         switch node {
@@ -27,7 +29,9 @@ struct SplitNodeView<Content: View, EmptyContent: View>: View {
                 emptyPaneBuilder: emptyPaneBuilder,
                 showSplitButtons: showSplitButtons,
                 tabBarVisibility: tabBarVisibility,
-                contentViewLifecycle: contentViewLifecycle
+                contentViewLifecycle: contentViewLifecycle,
+                paneHosting: paneHosting,
+                contentRevision: contentRevision
             )
 
         case .split(let splitState):
@@ -35,7 +39,6 @@ struct SplitNodeView<Content: View, EmptyContent: View>: View {
                 splitState: splitState,
                 controller: controller,
                 appearance: appearance,
-                dividerPositionRange: dividerPositionRange,
                 contentBuilder: contentBuilder,
                 emptyPaneBuilder: emptyPaneBuilder,
                 showSplitButtons: showSplitButtons,
@@ -43,7 +46,10 @@ struct SplitNodeView<Content: View, EmptyContent: View>: View {
                 contentViewLifecycle: contentViewLifecycle,
                 onGeometryChange: onGeometryChange,
                 enableAnimations: enableAnimations,
-                animationDuration: animationDuration
+                animationDuration: animationDuration,
+                zoomedPaneId: zoomedPaneId,
+                paneHosting: paneHosting,
+                contentRevision: contentRevision
             )
         }
     }
@@ -75,7 +81,7 @@ final class NonDraggableHostingController<Content: View>: NSHostingController<Co
 }
 
 /// Container NSView for a pane inside SinglePaneWrapper.
-class PaneDragContainerView: NSView {
+class PaneDragContainerView: PaneHostingSlotView {
     override var isOpaque: Bool { false }
     // Mirror the override on `NonDraggableHostingView` so AppKit cannot grab a window
     // drag from this container either, even before the click reaches the inner hosting
@@ -86,7 +92,7 @@ class PaneDragContainerView: NSView {
 /// Bare container used by `SplitContainerView` to back NSSplitView arranged subviews.
 /// Like `PaneDragContainerView`, this exists purely to suppress AppKit window-drag
 /// intent so split-pane tab clicks are not consumed by drag detection in minimal mode.
-final class SplitArrangedContainerView: NSView {
+final class SplitArrangedContainerView: PaneHostingSlotView {
     override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
 }
@@ -96,11 +102,13 @@ struct SinglePaneWrapper<Content: View, EmptyContent: View>: NSViewRepresentable
     @Environment(SplitViewController.self) private var controller
     
     let pane: PaneState
-    let contentBuilder: (TabItem, PaneID) -> Content
+    let contentBuilder: (TabItem, PaneID, TabContentContext) -> Content
     let emptyPaneBuilder: (PaneID) -> EmptyContent
     var showSplitButtons: Bool = true
     var tabBarVisibility: TabBarVisibility = .always
     var contentViewLifecycle: ContentViewLifecycle = .recreateOnSwitch
+    let paneHosting: PaneHostingCoordinator
+    let contentRevision: AnyHashable
 
     func makeNSView(context: Context) -> NSView {
         let paneView = PaneContainerView(
@@ -112,43 +120,27 @@ struct SinglePaneWrapper<Content: View, EmptyContent: View>: NSViewRepresentable
             tabBarVisibility: tabBarVisibility,
             contentViewLifecycle: contentViewLifecycle
         )
-        let hostingController = NonDraggableHostingController(rootView: paneView)
-        if #available(macOS 13.0, *) {
-            // Panes are space-filling: without this, the hosting controller
-            // publishes its SwiftUI content's ideal size as intrinsic-size
-            // constraints, and that pressure propagates up the fitting-size
-            // chain to whatever sizes itself from content — including a
-            // window that tracks its content's ideal. (Same reasoning as
-            // makeHostingController in SplitContainerView.)
-            hostingController.sizingOptions = []
+        let hostingController = paneHosting.host(
+            for: pane.id,
+            contentRevision: contentRevision,
+            showSplitButtons: showSplitButtons,
+            tabBarVisibility: tabBarVisibility,
+            contentViewLifecycle: contentViewLifecycle
+        ) {
+            AnyView(paneView)
         }
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
 
         let containerView = PaneDragContainerView()
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
         containerView.layer?.isOpaque = false
         containerView.layer?.masksToBounds = true
-        containerView.addSubview(hostingController.view)
-
-        NSLayoutConstraint.activate([
-            hostingController.view.topAnchor.constraint(equalTo: containerView.topAnchor),
-            hostingController.view.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            hostingController.view.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            hostingController.view.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
-        ])
+        paneHosting.attach(hostingController, to: containerView)
 
         // Store hosting controller to keep it alive
         context.coordinator.hostingController = hostingController
 
         return containerView
-    }
-
-    // Space-filling, like SplitContainerView: a pane renders in whatever
-    // space its container gives it and must never answer an unspecified
-    // proposal with a content-derived size.
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
@@ -169,14 +161,31 @@ struct SinglePaneWrapper<Content: View, EmptyContent: View>: NSViewRepresentable
             tabBarVisibility: tabBarVisibility,
             contentViewLifecycle: contentViewLifecycle
         )
-        context.coordinator.hostingController?.rootView = paneView
+        let hostingController = paneHosting.host(
+            for: pane.id,
+            contentRevision: contentRevision,
+            showSplitButtons: showSplitButtons,
+            tabBarVisibility: tabBarVisibility,
+            contentViewLifecycle: contentViewLifecycle
+        ) {
+            AnyView(paneView)
+        }
+        paneHosting.attach(hostingController, to: nsView)
+        context.coordinator.hostingController = hostingController
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        let coordinator = Coordinator()
+        coordinator.paneHosting = paneHosting
+        return coordinator
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.paneHosting?.parkHostedPanes(in: nsView)
     }
 
     class Coordinator {
-        var hostingController: NonDraggableHostingController<PaneContainerView<Content, EmptyContent>>?
+        weak var paneHosting: PaneHostingCoordinator?
+        var hostingController: NonDraggableHostingController<AnyView>?
     }
 }

@@ -1,12 +1,5 @@
 import Foundation
 
-/// Presentation state for a host-provided Fork Conversation tab action.
-public enum TabContextForkConversationAvailability: Sendable {
-    case hidden
-    case refreshing
-    case available
-}
-
 /// Context menu actions that can be triggered from a tab item.
 public enum TabContextAction: String, CaseIterable, Sendable {
     case rename
@@ -28,8 +21,6 @@ public enum TabContextAction: String, CaseIterable, Sendable {
     case markAsRead
     case markAsUnread
     case toggleZoom
-    case toggleFullWidthTab
-    case disconnectRemote
     case forkConversation
     case forkConversationRight
     case forkConversationLeft

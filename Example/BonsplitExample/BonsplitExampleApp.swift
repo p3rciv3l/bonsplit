@@ -3,7 +3,7 @@ import Bonsplit
 
 @main
 struct BonsplitExampleApp: App {
-    @State private var debugState = DebugState()
+    @StateObject private var debugState = DebugState()
 
     var body: some Scene {
         WindowGroup {

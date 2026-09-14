@@ -273,11 +273,7 @@ enum TabBarColors {
     }
 
     static func activeIndicator(saturation: Double) -> Color {
-        Color(nsColor: nsColorActiveIndicator(saturation: saturation))
-    }
-
-    static func nsColorActiveIndicator(saturation: Double) -> NSColor {
-        NSColor.controlAccentColor.bonsplitSaturating(by: saturation)
+        return Color(nsColor: NSColor.controlAccentColor.bonsplitSaturating(by: saturation))
     }
 
     static var focusRing: Color {

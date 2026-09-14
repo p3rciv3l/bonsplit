@@ -3,17 +3,18 @@ import SwiftUI
 /// Main container view that renders the entire split tree (internal implementation)
 struct SplitViewContainer<Content: View, EmptyContent: View>: View {
     @Environment(SplitViewController.self) private var controller
+    @State private var paneHosting = PaneHostingCoordinator()
 
-    let contentBuilder: (TabItem, PaneID) -> Content
+    let contentBuilder: (TabItem, PaneID, TabContentContext) -> Content
     let emptyPaneBuilder: (PaneID) -> EmptyContent
     let appearance: BonsplitConfiguration.Appearance
-    let dividerPositionRange: ClosedRange<CGFloat>
     var showSplitButtons: Bool = true
     var tabBarVisibility: TabBarVisibility = .always
     var contentViewLifecycle: ContentViewLifecycle = .recreateOnSwitch
     var onGeometryChange: ((_ isDragging: Bool) -> Void)?
     var enableAnimations: Bool = true
     var animationDuration: Double = 0.15
+    let contentRevision: AnyHashable
 
     var body: some View {
         GeometryReader { geometry in
@@ -28,6 +29,9 @@ struct SplitViewContainer<Content: View, EmptyContent: View>: View {
                 .onAppear {
                     updateContainerFrame(geometry: geometry)
                 }
+                .onChange(of: controller.rootNode.allPaneIds) { _, paneIds in
+                    paneHosting.retainPanes(paneIds)
+                }
         }
     }
 
@@ -40,19 +44,44 @@ struct SplitViewContainer<Content: View, EmptyContent: View>: View {
 
     @ViewBuilder
     private var splitNodeContent: some View {
-        let nodeToRender = controller.zoomedNode ?? controller.rootNode
+        if !enableAnimations {
+            NativeSplitTreeView(
+                rootNode: controller.rootNode,
+                layout: PaneTilingTree(controller.rootNode),
+                controller: controller,
+                isInteractive: controller.isInteractive,
+                isTilingEnabled: controller.paneTiling.layout != .manual,
+                contentBuilder: contentBuilder,
+                emptyPaneBuilder: emptyPaneBuilder,
+                appearance: appearance,
+                showSplitButtons: showSplitButtons,
+                tabBarVisibility: tabBarVisibility,
+                contentViewLifecycle: contentViewLifecycle,
+                onGeometryChange: onGeometryChange,
+                zoomedPaneId: controller.zoomedPaneId,
+                paneHosting: paneHosting,
+                contentRevision: contentRevision
+            )
+        } else {
         SplitNodeView(
-            node: nodeToRender,
+            node: controller.rootNode,
             contentBuilder: contentBuilder,
             emptyPaneBuilder: emptyPaneBuilder,
             appearance: appearance,
-            dividerPositionRange: dividerPositionRange,
             showSplitButtons: showSplitButtons,
             tabBarVisibility: tabBarVisibility,
             contentViewLifecycle: contentViewLifecycle,
             onGeometryChange: onGeometryChange,
             enableAnimations: enableAnimations,
-            animationDuration: animationDuration
+            animationDuration: animationDuration,
+            zoomedPaneId: controller.zoomedPaneId,
+            paneHosting: paneHosting,
+            contentRevision: contentRevision
         )
+        .overlay {
+            PaneHostingParkingView(paneHosting: paneHosting)
+                .allowsHitTesting(false)
+        }
+        }
     }
 }
