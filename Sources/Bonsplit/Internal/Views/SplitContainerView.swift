@@ -132,23 +132,16 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
     var enableAnimations: Bool = true
     var animationDuration: Double = 0.15
     var zoomedPaneId: PaneID?
-    let paneHosting: PaneHostingCoordinator
     let contentRevision: AnyHashable
 
     func makeCoordinator() -> Coordinator {
-        let coordinator = Coordinator(
+        Coordinator(
             splitState: splitState,
             minimumPaneWidth: appearance.minimumPaneWidth,
             minimumPaneHeight: appearance.minimumPaneHeight,
             preservesPlannedDividerPosition: controller.paneTiling.layout != .manual,
             onGeometryChange: onGeometryChange
         )
-        coordinator.paneHosting = paneHosting
-        return coordinator
-    }
-
-    static func dismantleNSView(_ nsView: NSSplitView, coordinator: Coordinator) {
-        coordinator.paneHosting?.parkHostedPanes(in: nsView)
     }
 
     func makeNSView(context: Context) -> NSSplitView {
@@ -187,7 +180,7 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
         return splitView
     }
 
-    /// Native creation is shared by animated hosting and the persistent tree.
+    /// Creates the native divider container for this split's local hosting views.
     static func makeNativeSplitView(
         splitState: SplitState,
         appearance: BonsplitConfiguration.Appearance,
@@ -463,28 +456,6 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
     // MARK: - Helpers
 
     private func makeHostingController(for node: SplitNode) -> NonDraggableHostingController<AnyView> {
-        if case .pane(let pane) = node {
-            return paneHosting.host(
-                for: pane.id,
-                contentRevision: contentRevision,
-                showSplitButtons: showSplitButtons,
-                tabBarVisibility: tabBarVisibility,
-                contentViewLifecycle: contentViewLifecycle
-            ) {
-                // Keep the same concrete root as SinglePaneWrapper. A
-                // conditional ViewBuilder wrapper would remount leaf content
-                // when this pane moves between the root and a nested split.
-                AnyView(PaneContainerView(
-                    pane: pane,
-                    controller: controller,
-                    contentBuilder: contentBuilder,
-                    emptyPaneBuilder: emptyPaneBuilder,
-                    showSplitButtons: showSplitButtons,
-                    tabBarVisibility: tabBarVisibility,
-                    contentViewLifecycle: contentViewLifecycle
-                ))
-            }
-        }
         let hostingController = NonDraggableHostingController(rootView: AnyView(makeView(for: node)))
         if #available(macOS 13.0, *) {
             // NSSplitView owns pane geometry. Keep NSHostingController from publishing
@@ -508,7 +479,11 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
     }
 
     private func installHostingController(_ hostingController: NonDraggableHostingController<AnyView>, into container: NSView) {
-        paneHosting.attach(hostingController, to: container)
+        for view in container.subviews {
+            view.removeFromSuperview()
+        }
+        container.addSubview(hostingController.view)
+        hostingController.view.frame = container.bounds
     }
 
     private func updateHostedContent(
@@ -517,15 +492,8 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
         nodeTypeChanged: Bool,
         controller: inout NonDraggableHostingController<AnyView>?
     ) {
-        if case .pane = node {
-            let paneController = makeHostingController(for: node)
-            installHostingController(paneController, into: container)
-            controller = paneController
-            return
-        }
-
-        // Branch slots can reuse their structural hosts. Leaf hosts belong to
-        // pane identities and must never have their root replaced by a split.
+        // Each split owns its hosts locally; panes are not reparented through a
+        // global cache when the layout tree changes.
         if let current = controller, !nodeTypeChanged {
             current.rootView = AnyView(makeView(for: node))
             // Ensure fill if container bounds changed without a layout pass yet.
@@ -565,7 +533,6 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
                 enableAnimations: enableAnimations,
                 animationDuration: animationDuration,
                 zoomedPaneId: zoomedPaneId,
-                paneHosting: paneHosting,
                 contentRevision: contentRevision
             )
         }
@@ -582,7 +549,6 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
         private var zoomedChildIndex: Int?
         var isZoomed: Bool { zoomedChildIndex != nil }
         weak var splitView: NSSplitView?
-        weak var paneHosting: PaneHostingCoordinator?
         var isAnimating = false
         var didApplyInitialDividerPosition = false
         /// Initial divider placement can run before NSSplitView has a real size.
@@ -977,6 +943,43 @@ struct SplitContainerView<Content: View, EmptyContent: View>: NSViewRepresentabl
                 )
 #endif
             }
+        }
+
+        func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
+            if let zoomedChildIndex, splitView.arrangedSubviews.indices.contains(zoomedChildIndex) {
+                splitView.arrangedSubviews[zoomedChildIndex].frame = splitView.bounds
+                return
+            }
+            guard !isAnimating,
+                  !isDragging,
+                  !isSyncingProgrammatically,
+                  splitView.arrangedSubviews.count == 2,
+                  splitAvailableSize(in: splitView) > 0 else {
+                splitView.adjustSubviews()
+                return
+            }
+
+            // Restore the ordinary renderer's fractional resize contract. A
+            // parent's programmatic resize must not suppress its child's layout.
+            let scale = max(splitView.window?.backingScaleFactor ?? 1, 1)
+            let requested = splitAvailableSize(in: splitView) * splitState.dividerPosition
+            let position = clampedDividerPosition((requested * scale).rounded() / scale, in: splitView)
+            var first = splitView.bounds
+            var second = splitView.bounds
+            if splitView.isVertical {
+                first.size.width = position
+                second.origin.x = first.maxX + splitView.dividerThickness
+                second.size.width = max(0, splitView.bounds.maxX - second.minX)
+            } else {
+                first.size.height = position
+                second.origin.y = first.maxY + splitView.dividerThickness
+                second.size.height = max(0, splitView.bounds.maxY - second.minY)
+            }
+            isSyncingProgrammatically = true
+            defer { isSyncingProgrammatically = false }
+            splitView.arrangedSubviews[0].frame = first
+            splitView.arrangedSubviews[1].frame = second
+            lastAppliedPosition = position / splitAvailableSize(in: splitView)
         }
 
         func splitViewDidResizeSubviews(_ notification: Notification) {

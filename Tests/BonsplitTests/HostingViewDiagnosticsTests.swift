@@ -8,10 +8,10 @@ import Testing
 struct HostingViewDiagnosticsTests {
 #if DEBUG
     @Test
-    func cachedHostingControllerRetainsGeometryAndIdentityThroughLayout() throws {
+    func localHostingControllerRetainsGeometryAndIdentityThroughLayout() throws {
         _ = NSApplication.shared
-        let cache = PaneHostingCoordinator()
-        let controller = cache.host(for: PaneID(), contentRevision: 1) { AnyView(Color.clear) }
+        let controller = NonDraggableHostingController(rootView: AnyView(Color.clear))
+        controller.sizingOptions = []
         let host = try #require(controller.view as? NSHostingView<AnyView>)
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
         let window = NSWindow(contentRect: root.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -69,17 +69,4 @@ struct HostingViewDiagnosticsTests {
         #expect(host.sizingOptions.isEmpty)
     }
 
-    @Test
-    func cachedPaneHostingViewUsesExplicitNativeSizing() throws {
-        let cache = PaneHostingCoordinator()
-        let pane = PaneID()
-        let controller = cache.host(for: pane, contentRevision: 1) { AnyView(EmptyView()) }
-        let host = try #require(controller.view as? NSHostingView<AnyView>)
-        #expect(controller.sizingOptions.isEmpty)
-        #expect(host.sizingOptions.isEmpty)
-        let retained = cache.host(for: pane, contentRevision: 2) { AnyView(Color.clear) }
-        #expect(retained === controller)
-        #expect(retained.view === host)
-        #expect(host.sizingOptions.isEmpty)
-    }
 }

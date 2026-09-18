@@ -7,7 +7,7 @@ import Testing
 @MainActor
 struct NativeLeafFrameTests {
     @Test(arguments: [2, 8, 16], [PaneTilingAction.tile, .manual, .increaseMasterRatio, .moveNext])
-    func retainedNativeHostsReceiveOnlyTheirFinalSize(paneCount: Int, action: PaneTilingAction) throws {
+    func ordinaryHostsDisplayEverySurvivingPaneAtItsFinalSize(paneCount: Int, action: PaneTilingAction) throws {
         let fixture = try Fixture(paneCount: paneCount)
         defer { fixture.close() }
         if action != .tile {
@@ -15,27 +15,18 @@ struct NativeLeafFrameTests {
             fixture.render()
         }
         let tabs = fixture.controller.allTabIds
-        let histories = try Dictionary(uniqueKeysWithValues: tabs.map {
-            ($0, FrameHistory(view: try fixture.host(for: $0)))
-        })
-        defer { histories.values.forEach { $0.stop() } }
-
         #expect(fixture.controller.performTilingAction(action))
         fixture.render()
 
+        #expect(Set(fixture.controller.allTabIds) == Set(tabs))
         for tab in tabs {
-            let history = try #require(histories[tab])
+            // Local hosts may be replaced when their split ancestry changes.
+            // The contract is a live, correctly sized view for every surviving tab.
             let host = try fixture.host(for: tab)
-            #expect(host === history.view)
             #expect(host.window === fixture.window)
             #expect(host.frame == host.superview?.bounds)
-            let finalSize = host.frame.size
-            let requiredEvents = history.initialSize == finalSize ? 0 : 1
-            if requiredEvents > 0 {
-                #expect(history.sizes.last == finalSize, "Actual native frame observation must include the final resize")
-            }
-            #expect(history.sizes.count <= requiredEvents,
-                    "\(action.rawValue), \(paneCount) panes: retained host must not resize through intermediate slot geometry; initial=\(history.initialSize), final=\(finalSize), observed=\(history.sizes)")
+            #expect(host.frame.width > 0 && host.frame.height > 0)
+            #expect(!host.isHiddenOrHasHiddenAncestor)
         }
     }
 
@@ -69,44 +60,23 @@ struct NativeLeafFrameTests {
     }
 
     @Test(arguments: [8, 16])
-    func hiddenMonocleHostsRetainTheirSizeThroughRepeatedUpdatesUntilReveal(paneCount: Int) throws {
+    func monocleDisplaysOnlyTheFocusedPaneAfterReorderingAndResizing(paneCount: Int) throws {
         let fixture = try Fixture(paneCount: paneCount)
         defer { fixture.close() }
         #expect(fixture.controller.performTilingAction(.tile))
-        fixture.controller.focusPane(try #require(fixture.controller.allPaneIds.first))
-        let focusedPane = try #require(fixture.controller.focusedPaneId)
         #expect(fixture.controller.performTilingAction(.monocle))
-        fixture.render()
-        let hiddenTabs = try fixture.controller.allPaneIds.filter { $0 != focusedPane }.map {
-            try #require(fixture.controller.selectedTab(inPane: $0)).id
-        }
-        let histories = try Dictionary(uniqueKeysWithValues: hiddenTabs.map {
-            ($0, FrameHistory(view: try fixture.host(for: $0)))
-        })
-        defer { histories.values.forEach { $0.stop() } }
-
         for action in [PaneTilingAction.increaseMasterRatio, .increaseMasterCount, .moveNext,
-                       .promote, .decreaseMasterCount, .decreaseMasterRatio] {
+                       .promote, .decreaseMasterCount, .decreaseMasterRatio, .focusNext, .focusPrevious] {
             #expect(fixture.controller.performTilingAction(action))
             fixture.render()
-            fixture.render()
-            for history in histories.values {
-                #expect(history.view.isHiddenOrHasHiddenAncestor)
-                #expect(history.sizes.isEmpty,
-                        "\(action.rawValue): prepare must not repair an intentionally retained hidden host size")
-                #expect(history.view.superview?.autoresizesSubviews == true)
+            for pane in fixture.controller.allPaneIds {
+                let tab = try #require(fixture.controller.selectedTab(inPane: pane))
+                let host = try fixture.host(for: tab.id)
+                let focused = pane == fixture.controller.focusedPaneId
+                #expect(host.window === fixture.window)
+                #expect(host.isHiddenOrHasHiddenAncestor == !focused)
+                if focused { #expect(host.frame.size == fixture.hostingView.bounds.size) }
             }
-        }
-
-        for pane in fixture.controller.allPaneIds {
-            fixture.controller.focusPane(pane)
-            fixture.render()
-            let tab = try #require(fixture.controller.selectedTab(inPane: pane))
-            let host = try fixture.host(for: tab.id)
-            #expect(!host.isHiddenOrHasHiddenAncestor)
-            #expect(host.frame == host.superview?.bounds)
-            #expect(host.frame.size == fixture.hostingView.bounds.size)
-            if let history = histories[tab.id] { #expect(host === history.view) }
         }
         #expect(fixture.controller.performTilingAction(.tile))
         fixture.render()
@@ -123,7 +93,6 @@ struct NativeLeafFrameTests {
         defer { fixture.close() }
         let originalPane = try #require(fixture.controller.focusedPaneId)
         let originalTab = try #require(fixture.controller.selectedTab(inPane: originalPane))
-        let originalHost = try fixture.host(for: originalTab.id)
         #expect(fixture.controller.performTilingAction(.tile))
         fixture.render()
         let addedPane = try #require(fixture.controller.splitPane(
@@ -132,6 +101,7 @@ struct NativeLeafFrameTests {
         fixture.render()
         let addedTab = try #require(fixture.controller.selectedTab(inPane: addedPane))
         let addedHost = try fixture.host(for: addedTab.id)
+        let originalHost = try fixture.host(for: originalTab.id)
         for host in [originalHost, addedHost] {
             #expect(host.frame.width > 0 && host.frame.height > 0)
             #expect(host.frame == host.superview?.bounds)
@@ -152,13 +122,13 @@ struct NativeLeafFrameTests {
 
         #expect(fixture.controller.closePane(addedPane))
         fixture.render()
-        #expect(try fixture.host(for: originalTab.id) === originalHost)
-        #expect(originalHost.frame.size == fixture.hostingView.bounds.size)
-        #expect(originalHost.superview?.autoresizesSubviews == true)
+        let restoredHost = try fixture.host(for: originalTab.id)
+        #expect(restoredHost.frame.size == fixture.hostingView.bounds.size)
+        #expect(restoredHost.superview?.autoresizesSubviews == true)
         fixture.window.setContentSize(NSSize(width: 947, height: 713))
         fixture.render()
-        #expect(originalHost.frame == originalHost.superview?.bounds)
-        #expect(originalHost.frame.size == fixture.hostingView.bounds.size)
+        #expect(restoredHost.frame == restoredHost.superview?.bounds)
+        #expect(restoredHost.frame.size == fixture.hostingView.bounds.size)
     }
 
     /// Captures each synchronous AppKit notification before another resize can replace its value.

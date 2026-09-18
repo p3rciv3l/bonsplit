@@ -3,7 +3,6 @@ import SwiftUI
 /// Main container view that renders the entire split tree (internal implementation)
 struct SplitViewContainer<Content: View, EmptyContent: View>: View {
     @Environment(SplitViewController.self) private var controller
-    @State private var paneHosting = PaneHostingCoordinator()
 
     let contentBuilder: (TabItem, PaneID, TabContentContext) -> Content
     let emptyPaneBuilder: (PaneID) -> EmptyContent
@@ -29,9 +28,6 @@ struct SplitViewContainer<Content: View, EmptyContent: View>: View {
                 .onAppear {
                     updateContainerFrame(geometry: geometry)
                 }
-                .onChange(of: controller.rootNode.allPaneIds) { _, paneIds in
-                    paneHosting.retainPanes(paneIds)
-                }
         }
     }
 
@@ -44,25 +40,6 @@ struct SplitViewContainer<Content: View, EmptyContent: View>: View {
 
     @ViewBuilder
     private var splitNodeContent: some View {
-        if !enableAnimations {
-            NativeSplitTreeView(
-                rootNode: controller.rootNode,
-                layout: PaneTilingTree(controller.rootNode),
-                controller: controller,
-                isInteractive: controller.isInteractive,
-                isTilingEnabled: controller.paneTiling.layout != .manual,
-                contentBuilder: contentBuilder,
-                emptyPaneBuilder: emptyPaneBuilder,
-                appearance: appearance,
-                showSplitButtons: showSplitButtons,
-                tabBarVisibility: tabBarVisibility,
-                contentViewLifecycle: contentViewLifecycle,
-                onGeometryChange: onGeometryChange,
-                zoomedPaneId: controller.zoomedPaneId,
-                paneHosting: paneHosting,
-                contentRevision: contentRevision
-            )
-        } else {
         SplitNodeView(
             node: controller.rootNode,
             contentBuilder: contentBuilder,
@@ -75,13 +52,7 @@ struct SplitViewContainer<Content: View, EmptyContent: View>: View {
             enableAnimations: enableAnimations,
             animationDuration: animationDuration,
             zoomedPaneId: controller.zoomedPaneId,
-            paneHosting: paneHosting,
             contentRevision: contentRevision
         )
-        .overlay {
-            PaneHostingParkingView(paneHosting: paneHosting)
-                .allowsHitTesting(false)
-        }
-        }
     }
 }
